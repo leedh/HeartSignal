@@ -3,6 +3,6 @@
 .ipynb_checkpoints
 .DS_Store
 assets/
-notebooks/output
-notebooks/preprocesed_data
+previous/
+notebooks/preprocessed_data
 notebooks/the-circor-digiscope-phonocardiogram-dataset-1.0.3
