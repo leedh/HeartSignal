@@ -1,1 +1,8 @@
 *.ini
+.vscode
+.ipynb_checkpoints
+.DS_Store
+assets/
+notebooks/output
+notebooks/preprocesed_data
+notebooks/the-circor-digiscope-phonocardiogram-dataset-1.0.3
