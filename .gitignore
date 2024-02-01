@@ -1,8 +1,16 @@
+# dot files
 *.ini
 .vscode
 .ipynb_checkpoints
 .DS_Store
+__pycache__
+
+# Directories
 assets/
 previous/
-notebooks/preprocessed_data
-notebooks/the-circor-digiscope-phonocardiogram-dataset-1.0.3
+data/*
+!data/dataset.py
+!data/__init__.py
+models/notebooks
+notebooks/
+scripts/
