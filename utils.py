@@ -15,6 +15,18 @@ from tqdm import tqdm
 # load custom modules
 from preprocess.labels import *
 
+
+# time count decorator
+def time_calculator(func):
+    def wrapper(*args, **kwargs):
+        import time
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"Elapsed time: <{func.__name__}> execution took {end_time - start_time:.2f} sec")
+        return result
+    return wrapper
+
 # load the files from dirPath
 def load_files(dirPath):
     files = list()
