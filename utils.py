@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import librosa
 from scipy.signal import butter, lfilter, iirnotch
 import tensorflow as tf
+from keras.preprocessing.image import load_img, img_to_array, save_img
 
 from tqdm import tqdm
 

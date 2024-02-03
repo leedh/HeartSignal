@@ -53,47 +53,49 @@ class DataLoader:
         return label
 
 class ImageLoader:
-    def __init__(self, data_dir, folder, img_height, img_width, batch_size):
+    def __init__(self, data_dir, img_height, img_width, batch_size, folder=None):
         self.data_dir = data_dir
-        self.folder = folder
         self.img_height = img_height
         self.img_width = img_width
         self.batch_size = batch_size
+        self.folder = folder
 
     def parse_image(self, img_path: tf.Tensor, normalize=True):
-        # 이미지 파일을 불러와서 사이즈 조절 및 정규화
-        img = tf.io.read_file(os.path.join(img_path, self.folder)) # 이미지 파일 로드
-        img = tf.image.decode_png(img, channels=3) # 이미지 디코드
-        img = tf.image.resize(img, [self.img_height, self.img_width]) # 이미지 크기 조정
-        img = tf.image.convert_image_dtype(img, "float32")
-        if normalize: # 이미지 정규화 (선택적)
-            img = img / 255.0
+        # TensorFlow I/O 연산을 사용하여 이미지 파일 로드 및 처리
+        img = tf.io.read_file(img_path)
+        img = tf.image.decode_png(img, channels=3)
+        img = tf.image.resize(img, [self.img_height, self.img_width])
+        if normalize:
+            img = img / 255.0  # 이미지 정규화
         return img
 
-    def parse_label(self, label_path: tf.Tensor):
-        # 레이블 이미지 파일을 불러와서 사이즈 조절
-        label = tf.io.read_file(os.path.join(label_path, self.folder)) # 이미지 파일 로드
-        label = tf.image.decode_png(label, channels=1) # 이미지 디코드
-        label = tf.image.resize(label, [self.img_height, self.img_width]) # 이미지 크기 조정
-        label = tf.image.convert_image_dtype(label, "uint8") # 이미지 데이터 타입 변환
+    def parse_label(self, label_path: tf.Tensor, keep_colors=[0, 98, 244]):
+        # TensorFlow I/O 연산을 사용하여 레이블 이미지 파일 로드 및 처리
+        label = tf.io.read_file(label_path)
+        label = tf.image.decode_png(label, channels=1)
+        label = tf.image.resize(label, [self.img_height, self.img_width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        label = tf.cast(label, tf.int32)  # 데이터 타입 변환
+
+        # 지정된 컬러값만 유지하고 나머지 값을 0으로 설정
+        keep_colors_tensor = tf.constant(keep_colors, dtype=tf.int32)
+        mask = tf.reduce_any(tf.equal(tf.expand_dims(label, axis=-1), keep_colors_tensor), axis=-1)
+        label = tf.where(mask, label, tf.zeros_like(label))
+
         return label
 
     def load_dataset(self):
         # 이미지와 레이블 파일 경로를 가져옵니다.
-        img_paths = glob.glob(os.path.join(self.data_dir, '*_img.png'))
-        label_paths = [path.replace('_img.png', '_label.png') for path in img_paths]
+        img_paths = tf.data.Dataset.list_files(os.path.join(self.data_dir, '*_img.png'), shuffle=False)
+        label_paths = img_paths.map(lambda x: tf.strings.regex_replace(x, '_img.png', '_label.png'))
 
-        # TensorFlow Dataset 객체를 생성합니다.
-        img_dataset = tf.data.Dataset.from_tensor_slices(img_paths)
-        img_dataset = img_dataset.map(self.parse_image, num_parallel_calls=tf.data.AUTOTUNE)
-
-        label_dataset = tf.data.Dataset.from_tensor_slices(label_paths)
-        label_dataset = label_dataset.map(self.parse_label, num_parallel_calls=tf.data.AUTOTUNE)
+        # TensorFlow Dataset 객체를 생성 및 매핑합니다.
+        img_dataset = img_paths.map(self.parse_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        label_dataset = label_paths.map(self.parse_label, num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
         # 이미지와 레이블 데이터셋을 결합합니다.
         dataset = tf.data.Dataset.zip((img_dataset, label_dataset))
 
         # 배치 처리, 셔플, 프리패치를 설정합니다.
-        dataset = dataset.batch(self.batch_size).shuffle(buffer_size=100).prefetch(buffer_size=tf.data.AUTOTUNE)
+        dataset = dataset.batch(self.batch_size).shuffle(buffer_size=100).prefetch(tf.data.experimental.AUTOTUNE)
         
         return dataset

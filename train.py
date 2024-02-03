@@ -4,7 +4,9 @@ import keras
 from keras.utils import to_categorical
 from tensorflow.keras.utils import Progbar
 # load custom modules
-from dataloader import *
+from loader import *
+from utils import *
+from nets.unet import unet_model
 
 # from models import model
 
@@ -61,7 +63,9 @@ class Trainer:
 if __name__ == "__main__":
     epoch = 1
     batch = 5
-    model = YogaPose(num_classes=5)
+    img_size = (256, 256)  # u_net 함수 호출 부분에 맞는 이미지 크기 설정
+    num_classes = 3  # 분류할 클래스의 수 설정
+    model = unet_model(img_size, num_classes)
     dataset = load_data(data_path=data_path, batch_size=batch)
     loss_function = tf.keras.losses.CategoricalCrossentropy()
     optimizer = tf.keras.optimizers.Adam()
