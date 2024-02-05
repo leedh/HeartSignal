@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument('--crop_time', default=2500, type=float, help='image crop duration')
     
     # model hyperparameter
-    parser.add_argument('--batch_size', default=128, type=int, help='batch size')
+    parser.add_argument('--batch_size', default=16, type=int, help='batch size')
     parser.add_argument('--epoch', default=5, type=int, help='training epoch')
     parser.add_argument('--train', default='train', type=str, help='train and eval')
     parser.add_argument("--train_path", type=str, default='./data/train')
@@ -50,10 +50,10 @@ if __name__ == "__main__":
             os.makedirs(os.path.join(basedir, folder), exist_ok=True)
     
     # Load data into class
-    data = DataLoader(datadir + '/training_data')
+    # data = DataLoader(datadir + '/training_data')
     
-    # Split dataset
-    dataset_split(basedir, preprocess_name, data)
+    # # Split dataset
+    # dataset_split(basedir, preprocess_name, data)
 
     print("Data successfully prepared.")
     
