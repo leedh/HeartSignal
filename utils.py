@@ -114,6 +114,7 @@ def figure_mel_spec(S_dB, save_path, sr, hop_length):
     librosa.display.specshow(S_dB, sr=sr, hop_length=hop_length, vmin=-80, vmax=0, cmap='inferno')
     ax.set_aspect('auto') # set aspect ratio to be equal
     plt.tight_layout()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
     plt.close(fig)  # close the figure
     

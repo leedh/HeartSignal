@@ -59,19 +59,19 @@ if __name__ == "__main__":
     
     # dataset
     # ImageLoader 인스턴스 생성
-    loader = ImageLoader(directory=data_dir, image_size=(256, 256), batch_size=32)
-    # 데이터셋 가져오기
-    dataset = loader.get_dataset()
-    # 데이터셋 사용 예시 (첫 배치의 이미지 출력)
-    import matplotlib.pyplot as plt
+    # loader = ImageLoader(directory=data_dir, image_size=(256, 256), batch_size=32)
+    # # 데이터셋 가져오기
+    # dataset = loader.get_dataset()
+    # # 데이터셋 사용 예시 (첫 배치의 이미지 출력)
+    # import matplotlib.pyplot as plt
 
-    for images in dataset.take(1):
-        plt.figure(figsize=(10, 10))
-        for i in range(9):
-            ax = plt.subplot(3, 3, i + 1)
-            plt.imshow(images[i].numpy())
-            plt.axis("off")
-        plt.show()
+    # for images in dataset.take(1):
+    #     plt.figure(figsize=(10, 10))
+    #     for i in range(9):
+    #         ax = plt.subplot(3, 3, i + 1)
+    #         plt.imshow(images[i].numpy())
+    #         plt.axis("off")
+    #     plt.show()
     
     train_dir = args.train_path
     val_dir = args.val_path
@@ -106,4 +106,3 @@ if __name__ == "__main__":
     # 모델 평가
     test_loss, test_accuracy = model.evaluate(test_dataset)
     print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
-# %%
