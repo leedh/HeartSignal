@@ -1,13 +1,23 @@
-
 import os
 import argparse
 #import training
 from loader import DataLoader, ImageLoader
-from tensorflow.keras.preprocessing.image import img_to_array, load_img
+from config import data_config, train_config, id2color
+import matplotlib.pyplot as plt
+from keras.preprocessing.image import load_img, img_to_array, save_img
 from data.dataset import *
 from nets.unet import unet_model
 from train import Trainer
+from utils import *
 import tensorflow as tf
+import requests
+from zipfile import ZipFile
+import glob
+from dataclasses import dataclass
+import random
+import numpy as np
+import cv2
+import keras_cv
 
 if __name__ == "__main__":
 
@@ -17,17 +27,16 @@ if __name__ == "__main__":
     parser.add_argument('--crop_time', default=2500, type=float, help='image crop duration')
     
     # model hyperparameter
-    parser.add_argument('--batch_size', default=16, type=int, help='batch size')
+    parser.add_argument('--batch_size', default=4, type=int, help='batch size')
     parser.add_argument('--epoch', default=5, type=int, help='training epoch')
     parser.add_argument('--train', default='train', type=str, help='train and eval')
-    parser.add_argument("--train_path", type=str, default='./data/train')
-    parser.add_argument("--val_path", type=str,	default='./data/val')
-    parser.add_argument("--test_path", type=str, default='./data/test')
+    parser.add_argument("--train_path", type=str, default='./data/256px_2500ms/train')
+    parser.add_argument("--val_path", type=str,	default='./data/256px_2500ms/val')
+    parser.add_argument("--test_path", type=str, default='./data/256px_2500ms/test')
     parser.add_argument("--checkpoint_path",type=str, default='./checkpoints')
     args = parser.parse_args()
     print(args)
 
-    #%%
     basedir = os.path.join(os.getcwd(), 'data')
     datadir = os.path.join(basedir, 'the-circor-digiscope-phonocardiogram-dataset-1.0.3')
 
@@ -47,62 +56,141 @@ if __name__ == "__main__":
         
     for folder in ['train', 'val', 'test']:
         if not os.path.exists(os.path.join(prepdir, folder)):
-            os.makedirs(os.path.join(basedir, folder), exist_ok=True)
+            os.makedirs(os.path.join(prepdir, folder), exist_ok=True)
     
-    # Load data into class
-    # data = DataLoader(datadir + '/training_data')
-    
-    # # Split dataset
-    # dataset_split(basedir, preprocess_name, data)
+    if not check_dataset_exists(prepdir):
+        # Load data into class
+        data = DataLoader(datadir + '/training_data')
+        # Split dataset
+        dataset_split(basedir, preprocess_name, data)
+    else:
+        print("Dataset has already been split. Skipping dataset loading and splitting.")
 
     print("Data successfully prepared.")
-    
-    # dataset
-    # ImageLoader 인스턴스 생성
-    # loader = ImageLoader(directory=data_dir, image_size=(256, 256), batch_size=32)
-    # # 데이터셋 가져오기
-    # dataset = loader.get_dataset()
-    # # 데이터셋 사용 예시 (첫 배치의 이미지 출력)
-    # import matplotlib.pyplot as plt
 
-    # for images in dataset.take(1):
-    #     plt.figure(figsize=(10, 10))
-    #     for i in range(9):
-    #         ax = plt.subplot(3, 3, i + 1)
-    #         plt.imshow(images[i].numpy())
-    #         plt.axis("off")
-    #     plt.show()
-    
     train_dir = args.train_path
     val_dir = args.val_path
     test_dir = args.test_path
 
-    # 이미지 로더 인스턴스 생성 및 데이터셋 로드
-    train_loader = ImageLoader(data_dir=train_dir, img_height=256, img_width=256, batch_size=args.batch_size)
-    val_loader = ImageLoader(data_dir=val_dir, img_height=256, img_width=256, batch_size=args.batch_size)
-    test_loader = ImageLoader(data_dir=test_dir, img_height=256, img_width=256, batch_size=args.batch_size)
+    keep_colors = [0, 98, 244]
+    filter_and_save_images(train_dir, keep_colors)
+    filter_and_save_images(val_dir, keep_colors)
+    filter_and_save_images(test_dir, keep_colors)
 
-    train_dataset = train_loader.load_dataset()
-    val_dataset = val_loader.load_dataset()
-    test_dataset = test_loader.load_dataset()
+    train_dir_gt = sorted([os.path.join(train_dir, f) for f in os.listdir(train_dir) if f.endswith('_img.png')])
+    val_dir_gt = sorted([os.path.join(val_dir, f) for f in os.listdir(val_dir) if f.endswith('_img.png')])
+    test_dir_gt = sorted([os.path.join(test_dir, f) for f in os.listdir(test_dir) if f.endswith('_img.png')])
+    train_dir_label = sorted([os.path.join(train_dir, f) for f in os.listdir(train_dir) if f.endswith('_filtered.png')])
+    val_dir_label = sorted([os.path.join(val_dir, f) for f in os.listdir(val_dir) if f.endswith('_filtered.png')])
+    test_dir_label = sorted([os.path.join(test_dir, f) for f in os.listdir(test_dir) if f.endswith('_filtered.png')])
+
+    print("train_dir 원본 이미지 파일:", train_dir_gt[0])
+    print("train_dir 레이블 이미지 파일:", train_dir_label[0])
+    print("val_dir 원본 이미지 파일:", val_dir_gt[0])
+    print("val_dir 레이블 이미지 파일:", val_dir_label[0])
+    print("test_dir 원본 이미지 파일:", test_dir_gt[0])
+    print("test_dir 레이블 이미지 파일:", test_dir_label[0])
+
+    train_data = tf.data.Dataset.from_tensor_slices((train_dir_gt, train_dir_label))
+    val_data = tf.data.Dataset.from_tensor_slices((val_dir_gt, val_dir_label))
+    test_data = tf.data.Dataset.from_tensor_slices((test_dir_gt, test_dir_label))
+
+    train_ds = train_data.map(load_data, num_parallel_calls=tf.data.AUTOTUNE)
+    valid_ds = val_data.map(load_data, num_parallel_calls=tf.data.AUTOTUNE)
+    test_ds = test_data.map(load_data, num_parallel_calls=tf.data.AUTOTUNE)
+
+    plot_train_ds = train_ds.map(unpackage_inputs).batch(3)
+    image_batch, mask_batch = next(iter(plot_train_ds.take(1)))
+
+    titles = ["GT Image", "GT Mask", "Overlayed Mask"]
+
+    for image, gt_mask in zip(image_batch, mask_batch):
+
+        gt_mask = tf.squeeze(gt_mask, axis=-1).numpy()
+        display_image_and_mask([image.numpy().astype(np.uint8), gt_mask],
+                            title_list=titles,
+                            figsize=(16,6),
+                            color_mask=True)
+
+
+    augment_fn = tf.keras.Sequential(
+    [
+        keras_cv.layers.RandomFlip(),
+        keras_cv.layers.RandomBrightness(factor=data_config.BRIGHTNESS_FACTOR,
+                                         value_range=(0, 255)),
+        keras_cv.layers.RandomContrast(factor=data_config.CONTRAST_FACTOR,
+                                       value_range=(0, 255)),
+    ])
+
+    train_dataset = (
+        train_ds.shuffle(data_config.BATCH_SIZE)
+        .map(augment_fn, num_parallel_calls=tf.data.AUTOTUNE)
+        .batch(data_config.BATCH_SIZE)
+        .map(unpackage_inputs)
+        .prefetch(buffer_size=tf.data.AUTOTUNE)
+        )
+
+    valid_dataset = (
+        valid_ds.batch(data_config.BATCH_SIZE)
+        .map(unpackage_inputs)
+        .prefetch(buffer_size=tf.data.AUTOTUNE)
+        )
+
+    test_dataset_random_samples = (
+        test_ds.shuffle(buffer_size=len(test_ds))
+        .take(10)  # 처음 10개의 샘플만 선택
+        .map(unpackage_inputs)
+        .batch(1)  # 배치 크기를 1로 설정
+        .prefetch(buffer_size=tf.data.AUTOTUNE)
+        )
+
+    backbone = keras_cv.models.ResNet50V2Backbone.from_preset(preset = train_config.MODEL,
+                                                          input_shape=data_config.IMAGE_SIZE+(3,),
+                                                          load_weights = True)
+    model = keras_cv.models.segmentation.DeepLabV3Plus(num_classes=data_config.NUM_CLASSES, backbone=backbone)
+
+    # Build model.
+
+    # Get callbacks.
+    callbacks = get_callbacks(train_config)
+    # Define Loss.
+    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+    # Compile model.
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(train_config.LEARNING_RATE),
+        loss=loss_fn,
+        metrics=["accuracy", mean_iou],
+    )
+
+    history = model.fit(
+    train_dataset,
+    epochs=train_config.EPOCHS,
+    validation_data=valid_dataset,
+    callbacks=callbacks
+    )
+
+    # 추론 함수 실행
+    saved_image_paths = inference(model, test_dataset_random_samples, 5)
 
     # 모델 초기화 및 컴파일
-    img_size = (256, 256)  # u_net 함수 호출 부분에 맞는 이미지 크기 설정
-    num_classes = 3  # 분류할 클래스의 수 설정
-    model = unet_model(img_size, num_classes)
+    # img_size = (256, 256)
+    # num_classes = 3
+    # model = unet_model(img_size, num_classes)
 
-    model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+    # # 모델 컴파일
+    # model.compile(optimizer="adam",
+    #               loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    #               metrics=["accuracy"])
+    
+    # # 훈련 및 검증 메트릭 준비
+    # train_metric = tf.keras.metrics.SparseCategoricalAccuracy()
+    # valid_metric = tf.keras.metrics.SparseCategoricalAccuracy()
 
-    # 모델 학습 및 평가
-    if args.train == 'train':
-        trainer = Trainer(model=model, epochs=args.epoch, batch=args.batch_size,
-        loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        optimizer=tf.keras.optimizers.Adam())
-        trainer.train(train_dataset=train_dataset, train_metric=tf.keras.metrics.CategoricalAccuracy())
-    else:
-        # 평가 로직은 구현되지 않았습니다. 필요하다면 여기에 구현하세요.
-        print("Evaluation mode is not implemented.")
-
-    # 모델 평가
-    test_loss, test_accuracy = model.evaluate(test_dataset)
-    print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
+    # # Trainer 인스턴스 생성 및 학습 실행
+    # trainer = Trainer(model=model, epochs=args.epoch, batch=args.batch_size,
+    #                   loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    #                   optimizer=tf.keras.optimizers.Adam(),
+    #                   valid_dataset=valid_dataset)
+    # trainer.train(train_dataset=train_dataset,
+    #               train_metric=train_metric,
+    #               valid_metric=valid_metric)

@@ -7,7 +7,7 @@ import glob
 import tensorflow as tf 
 # from tensorflow.keras.utils import Sequence
 import librosa
-
+from config import *
 from tqdm import tqdm
 
 # load custom modules
@@ -60,7 +60,7 @@ class ImageLoader:
         self.batch_size = batch_size
         self.folder = folder
 
-    def parse_image(self, img_path: tf.Tensor, normalize=True):
+    def parse_image(self, img_path: str, normalize=True):
         # TensorFlow I/O 연산을 사용하여 이미지 파일 로드 및 처리
         img = tf.io.read_file(img_path)
         img = tf.image.decode_png(img, channels=3)
@@ -69,18 +69,23 @@ class ImageLoader:
             img = img / 255.0  # 이미지 정규화
         return img
 
-    def parse_label(self, label_path: tf.Tensor, keep_colors=[0, 98, 244]):
-        # TensorFlow I/O 연산을 사용하여 레이블 이미지 파일 로드 및 처리
-        label = tf.io.read_file(label_path)
-        label = tf.image.decode_png(label, channels=1)
-        label = tf.image.resize(label, [self.img_height, self.img_width], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
-        label = tf.cast(label, tf.int32)  # 데이터 타입 변환
-
-        # 지정된 컬러값만 유지하고 나머지 값을 0으로 설정
-        keep_colors_tensor = tf.constant(keep_colors, dtype=tf.int32)
-        mask = tf.reduce_any(tf.equal(tf.expand_dims(label, axis=-1), keep_colors_tensor), axis=-1)
-        label = tf.where(mask, label, tf.zeros_like(label))
-
+    def parse_label(self, img_path: str, keep_colors=[0, 98, 244]):
+        # TensorFlow I/O 연산을 사용하여 이미지 파일 로드 및 처리
+        img = tf.io.read_file(img_path)
+        img = tf.image.decode_png(img, channels=1)  # 그레이스케일로 로드
+        img = tf.image.resize(img, [self.img_height, self.img_width])
+        
+        # 이미지를 uint8로 변환
+        img = tf.cast(img, tf.uint8)
+        
+        # 유지할 색상이 아닌 값들을 0으로 설정
+        keep_colors_tensor = tf.constant(keep_colors, dtype=tf.uint8)
+        mask = tf.reduce_any(tf.equal(tf.expand_dims(img, axis=-1), keep_colors_tensor), axis=-1)
+        filtered_img = tf.where(mask, img, tf.zeros_like(img))
+        
+        # TensorFlow 텐서로 반환
+        label = tf.cast(filtered_img, dtype=tf.float32) / 255.0  # 정규화
+        
         return label
 
     def load_dataset(self):
@@ -89,8 +94,8 @@ class ImageLoader:
         label_paths = img_paths.map(lambda x: tf.strings.regex_replace(x, '_img.png', '_label.png'))
 
         # TensorFlow Dataset 객체를 생성 및 매핑합니다.
-        img_dataset = img_paths.map(self.parse_image, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        label_dataset = label_paths.map(self.parse_label, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        img_dataset = img_paths.map(lambda x: self.parse_image(x), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        label_dataset = label_paths.map(lambda x: self.parse_label(x), num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
         # 이미지와 레이블 데이터셋을 결합합니다.
         dataset = tf.data.Dataset.zip((img_dataset, label_dataset))
