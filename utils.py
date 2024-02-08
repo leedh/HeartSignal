@@ -1,19 +1,33 @@
 #!/usr/bin/python3
 # -*- coding:utf-8 -*-
 import os
-import io
-import random
 import numpy as np
 
 import matplotlib.pyplot as plt
 import librosa
-from scipy.signal import butter, lfilter, iirnotch
 import tensorflow as tf
+import cv2
+import cmapy
 
 from tqdm import tqdm
+import gc
 
 # load custom modules
 from preprocess.labels import *
+from preprocess.biquad import *
+from preprocess.denoising import *
+from preprocess.blank_region_clipping import *
+
+# time count decorator
+def time_calculator(func):
+    def wrapper(*args, **kwargs):
+        import time
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"Elapsed time: <{func.__name__}> execution took {end_time - start_time:.2f} sec")
+        return result
+    return wrapper
 
 # load the files from dirPath
 def load_files(dirPath):
@@ -24,97 +38,48 @@ def load_files(dirPath):
             files.append(f)
     return files
 
-# apply bandpass filter
-def butter_bandpass(lowcut, highcut, fs, order=5):
-    nyq = 0.5 * fs
-    low = lowcut / nyq
-    high = highcut / nyq
-    b, a = butter(order, [low, high], btype='band')
-    return b, a
+def create_mel_spectrogram_raw(waveform, target_sr, hop_length, win_length, n_fft, n_mels, resz=0):
+    S = librosa.feature.melspectrogram(y=waveform, sr=target_sr, n_fft=n_fft, hop_length=hop_length, win_length=win_length, n_mels=n_mels)
+    # Convert Mel spectrogram to Decibel scale
+    S = librosa.power_to_db(S, ref=np.max) # why np.max?: https://dsp.stackexchange.com/questions/64509/why-should-one-choose-the-maximum-as-reference-for-power-to-decibel-conversion
+    # normalization
+    S = (S-S.min()) / (S.max() - S.min())
+    S *= 255
+    img = cv2.applyColorMap(S.astype(np.uint8), cmapy.cmap('magma'))
+    height, width, _ = img.shape
+    if resz > 0:
+        img = cv2.resize(img, (width*resz, height*resz), interpolation=cv2.INTER_LINEAR)
+    img = cv2.flip(img, 0)
+    return img
 
-def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
-    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
-    filtered_data = lfilter(b,a, data)
-    return filtered_data
+#def figure_mel_spec(mel, type, save_path, sr, hop_length):
+def figure_mel_spec(mel, type, save_path):
+    colormap = 'magma' if type == 'img' else 'gray'
+    # Figure와 Axes 객체를 명시적으로 생성
+    fig, ax = plt.subplots(dpi=95)  # DPI 설정을 여기에 포함
+    ax.imshow(mel, cmap=colormap)
+    ax.axis('off')  # 축 끄기
 
-# apply notch filter (a.k.a. bandstop filter)
-def notch_pass_filter(data, center, interval=20, sr=4000, normalized=False):
-    center = center / (sr/2) if normalized else center
-    b, a = iirnotch(center, interval/interval, sr)
-    filtered_data = lfilter(b, a, data)
-    return filtered_data
+    # tight_layout 호출로 레이아웃 최적화
+    fig.tight_layout(pad=0)  # pad를 0으로 설정하여 여백 최소화
 
-def get_preprocessed_mel_spectrogram(wav_name, data_dir,sr=4000,n_mels=96,frame_length=0.025,frame_stride=0.01):
-    # 변수 정의
-    file_name = wav_name[:-4]
-    wav_path = os.path.join(data_dir, wav_name)
-
-    # 작업할 wav 파일 데이터 로드
-    y, sr = librosa.load(wav_path, sr=None)
-    mel = get_mel_spectrogram(y, sr, n_mels, frame_length, frame_stride)
-
-    # 원본 멜 스펙트로그램 위에 tsv 레이블 데이터 표시
-    boundaries_time = calculate_boundaries_time(wav_path[:-3] + 'tsv', sr, frame_stride)
+    # 이미지 파일로 저장
+    fig.savefig(save_path, bbox_inches='tight', pad_inches=0)
     
-    # for "50782_MV_1.tsv"
-    # if len(boundaries_time) == 0:
-    #     S_dB_list.append(0)
-    #     continue
+    # Figure 닫기 (메모리 해제를 위해)
+    plt.close(fig)  # 명시적으로 Figure 객체를 닫음
 
-    # 레이블 있는 부분만 크롭
-    cropped_start, cropped_end = calculate_cropped_indices(boundaries_time)
-    c_mel = get_cropped_mel(mel, cropped_start, cropped_end)
-    adjusted_boundaries = adjust_boundaries(boundaries_time, cropped_start)
-
-    # 전체 길이 조정 (2.5초)
-    new_mel, new_b = process_mel_and_boundaries(c_mel, adjusted_boundaries, sr, frame_stride, 2.5)
-    seconds_cropped_mel = crop_mel_by_sec(c_mel, sr, frame_stride, 2.5)
-
-    # squared mel spectrogram
-    S_dB, _ = draw_mel_square_spec(seconds_cropped_mel, sr, frame_stride)
+    # 가비지 컬렉션 실행
+    gc.collect()
     
-    return S_dB
-
-# get segmentation labels
-def get_label(wav_name, data_dir,sr=4000,n_mels=96,frame_length=0.025,frame_stride=0.01):
-
-    # 변수 정의
-    file_name = wav_name[:-4]
-    wav_path = os.path.join(data_dir, wav_name)
-
-    # 작업할 wav 파일 데이터 로드
-    y, sr = librosa.load(wav_path, sr=None)
-    mel = get_mel_spectrogram(y, sr, n_mels, frame_length, frame_stride)
-
-    # 원본 멜 스펙트로그램 위에 tsv 레이블 데이터 표시
-    boundaries_time = calculate_boundaries_time(wav_path[:-3] + 'tsv', sr, frame_stride)
-    
-    # for "50782_MV_1.tsv"
-    # if len(boundaries_time) == 0:
-    #     S_dB_list.append(0)
-    #     continue
-
-    # 레이블 있는 부분만 크롭
-    cropped_start, cropped_end = calculate_cropped_indices(boundaries_time)
-    c_mel = get_cropped_mel(mel, cropped_start, cropped_end)
-    adjusted_boundaries = adjust_boundaries(boundaries_time, cropped_start)
-
-    # 전체 길이 조정 (2.5초)
-    new_mel, new_b = process_mel_and_boundaries(c_mel, adjusted_boundaries, sr, frame_stride, 2.5)
-    seconds_cropped_mel = crop_mel_by_sec(c_mel, sr, frame_stride, 2.5)
-
-    # squared mel spectrogram
-    S_dB = draw_mel_square_spec_with_boundaries_to_label_and_filter(seconds_cropped_mel, new_b, -33, sr, frame_stride)
-    
-    return S_dB
-
-def figure_mel_spec(S_dB, save_path, sr, hop_length):
-    fig, ax = plt.subplots(figsize=(3, 3), dpi=95) # set the size of the figure
-    librosa.display.specshow(S_dB, sr=sr, hop_length=hop_length, vmin=-80, vmax=0, cmap='inferno')
-    ax.set_aspect('auto') # set aspect ratio to be equal
-    plt.tight_layout()
-    plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
-    plt.close(fig)  # close the figure
+    # plt.figure(dpi=95) # set the size of the figure
+    # plt.imshow(mel, cmap=colormap)
+    # plt.axis('off') # turn off axis
+    # #librosa.display.specshow(mel, sr=sr, hop_length=hop_length, vmin=-80, vmax=0, cmap='inferno')
+    # #ax.set_aspect('auto') # set aspect ratio to be equal
+    # plt.tight_layout()
+    # plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
+    # plt.close()  # close the figure
     
 # 저장된 이미지들의 컬러값 분석
 def analyze_image_colors(image_path):
@@ -128,14 +93,13 @@ def analyze_image_colors(image_path):
         color_ratios = {color: count / total_pixels for color, count in color_count.items()}
 
         return color_ratios
-    
+        
 # resize images
 def resize(input_image, input_mask, size=(128, 128)):
     input_image = tf.image.resize(input_image, size, method="nearest")
     input_mask = tf.image.resize(input_mask, size, method="nearest")
 
     return input_image, input_mask
-
 
 # data augmentation
 def augment(input_image, input_mask):
