@@ -14,3 +14,4 @@ data/*
 models/notebooks
 notebooks/
 scripts/
+checkpoints_resnet50_v2/

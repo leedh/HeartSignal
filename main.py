@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser.add_argument('--crop_time', default=2500, type=float, help='image crop duration')
     
     # model hyperparameter
-    parser.add_argument('--batch_size', default=4, type=int, help='batch size')
+    parser.add_argument('--batch_size', default=16, type=int, help='batch size')
     parser.add_argument('--epoch', default=5, type=int, help='training epoch')
     parser.add_argument('--train', default='train', type=str, help='train and eval')
     parser.add_argument("--train_path", type=str, default='./data/256px_2500ms/train')
@@ -144,53 +144,52 @@ if __name__ == "__main__":
         .prefetch(buffer_size=tf.data.AUTOTUNE)
         )
 
-    backbone = keras_cv.models.ResNet50V2Backbone.from_preset(preset = train_config.MODEL,
-                                                          input_shape=data_config.IMAGE_SIZE+(3,),
-                                                          load_weights = True)
-    model = keras_cv.models.segmentation.DeepLabV3Plus(num_classes=data_config.NUM_CLASSES, backbone=backbone)
+    # backbone = keras_cv.models.ResNet50V2Backbone.from_preset(preset = train_config.MODEL,
+    #                                                       input_shape=data_config.IMAGE_SIZE+(3,),
+    #                                                       load_weights = True)
+    # model = keras_cv.models.segmentation.DeepLabV3Plus(num_classes=data_config.NUM_CLASSES, backbone=backbone)
 
-    # Build model.
+    # # Build model.
 
-    # Get callbacks.
-    callbacks = get_callbacks(train_config)
-    # Define Loss.
-    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
-    # Compile model.
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(train_config.LEARNING_RATE),
-        loss=loss_fn,
-        metrics=["accuracy", mean_iou],
-    )
+    # # Get callbacks.
+    # callbacks = get_callbacks(train_config)
+    # # Define Loss.
+    # loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+    # # Compile model.
+    # model.compile(
+    #     optimizer=tf.keras.optimizers.Adam(train_config.LEARNING_RATE),
+    #     loss=loss_fn,
+    #     metrics=["accuracy", mean_iou],
+    # )
 
-    history = model.fit(
-    train_dataset,
-    epochs=train_config.EPOCHS,
-    validation_data=valid_dataset,
-    callbacks=callbacks
-    )
+    # history = model.fit(
+    # train_dataset,
+    # epochs=train_config.EPOCHS,
+    # validation_data=valid_dataset,
+    # callbacks=callbacks
+    # )
+
+    img_size = (256, 256)
+    num_classes = 3
+    model = unet_model(img_size, num_classes)
+
+    # 모델 컴파일
+    model.compile(optimizer="adam",
+                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
+                  metrics=["accuracy"])
+    
+    # 훈련 및 검증 메트릭 준비
+    train_metric = tf.keras.metrics.SparseCategoricalAccuracy()
+    valid_metric = tf.keras.metrics.SparseCategoricalAccuracy()
+
+    # Trainer 인스턴스 생성 및 학습 실행
+    trainer = Trainer(model=model, epochs=args.epoch, batch=args.batch_size,
+                      loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
+                      optimizer=tf.keras.optimizers.Adam(),
+                      valid_dataset=valid_dataset)
+    trainer.train(train_dataset=train_dataset,
+                  train_metric=train_metric,
+                  valid_metric=valid_metric)
 
     # 추론 함수 실행
     saved_image_paths = inference(model, test_dataset_random_samples, 5)
-
-    # 모델 초기화 및 컴파일
-    # img_size = (256, 256)
-    # num_classes = 3
-    # model = unet_model(img_size, num_classes)
-
-    # # 모델 컴파일
-    # model.compile(optimizer="adam",
-    #               loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-    #               metrics=["accuracy"])
-    
-    # # 훈련 및 검증 메트릭 준비
-    # train_metric = tf.keras.metrics.SparseCategoricalAccuracy()
-    # valid_metric = tf.keras.metrics.SparseCategoricalAccuracy()
-
-    # # Trainer 인스턴스 생성 및 학습 실행
-    # trainer = Trainer(model=model, epochs=args.epoch, batch=args.batch_size,
-    #                   loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-    #                   optimizer=tf.keras.optimizers.Adam(),
-    #                   valid_dataset=valid_dataset)
-    # trainer.train(train_dataset=train_dataset,
-    #               train_metric=train_metric,
-    #               valid_metric=valid_metric)

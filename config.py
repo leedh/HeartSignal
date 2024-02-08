@@ -5,7 +5,7 @@ import os
 @dataclass(frozen=True)
 class DatasetConfig:
     IMAGE_SIZE:        tuple = (256, 256)
-    BATCH_SIZE:          int = 8
+    BATCH_SIZE:          int = 16
     NUM_CLASSES:         int = 3
     BRIGHTNESS_FACTOR: float = 0.2
     CONTRAST_FACTOR:   float = 0.2
@@ -13,7 +13,7 @@ class DatasetConfig:
 @dataclass(frozen=True)
 class TrainingConfig:
     MODEL:           str = "resnet50_v2_imagenet"
-    EPOCHS:          int = 2
+    EPOCHS:          int = 30
     LEARNING_RATE: float = 1e-4
     CKPT_DIR:        str = os.path.join("checkpoints_"+"_".join(MODEL.split("_")[:2]),
                                         "deeplabv3_plus_"+"_".join(MODEL.split("_")[:2])+".h5")
