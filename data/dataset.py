@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+# -*- coding:utf-8 -*-
 import os
 import wget
 import zipfile
@@ -8,6 +10,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+import gc
 
 # custom modules
 from utils import figure_mel_spec
@@ -66,18 +69,25 @@ def dataset_split(basedir, preprocess_name, data):
         print(f"Saving {folder} data in {splitdir}...")
         for idx in tqdm(group_idx):
             audio_path = os.path.join(data.data_dir,data.wav_files[idx])
-            mel_spectrogram = data.mel_spectrogram_loader(audio_path)
+            mel_spectrogram, n = data.mel_spectrogram_loader(audio_path)
             label = data.label_loader(audio_path)
-            
-            # Save img and label figures
-            for suffix, content in zip(['img', 'label'], [mel_spectrogram, label]):
-                save_path = f"{splitdir}/{filename_list[idx]}_{suffix}.png"
-                if not os.path.exists(save_path):
-                    figure_mel_spec(content, save_path, data.sample_rate, hop_length)
-
+            # split한 데이터를 list에서 추출해 따로 저장
+            for i in range(n):
+                filename_n = f"{filename_list[idx]}_{i+1}"
+                mel_spectrogram_i = mel_spectrogram[i]
+                label_i = label[i]
+                
+                # Save img and label figures
+                for suffix, content in zip(['img', 'label'], [mel_spectrogram_i, label_i]):
+                    save_path = f"{splitdir}/{filename_n}_{suffix}.png"
+                    if not os.path.exists(save_path):
+                        #figure_mel_spec(content, suffix, save_path, data.sample_rate, hop_length)
+                        figure_mel_spec(content, suffix, save_path)
+            del audio_path, mel_spectrogram, label
+            gc.collect() # garbege collection
     # Save data
-    save_data(train_group_idx, 'train')
-    save_data(val_group_idx, 'val')
+    #save_data(train_group_idx, 'train')
+    #save_data(val_group_idx, 'val')
     save_data(test_group_idx, 'test')
 
     print("Data successfully saved.")

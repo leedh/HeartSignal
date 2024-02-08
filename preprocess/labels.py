@@ -3,38 +3,9 @@ import librosa.display
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.patches as patches
-from shutil import copy2
-from PIL import Image
-from collections import Counter
-
-# Mel 범위로 변환
-def get_mel_spectrogram(wave_form, sample_rate, n_mels, frame_length, frame_stride):
-    """
-    Convert an audio waveform to a Mel spectrogram.
-
-    :param wave_form: NumPy array of audio waveform.
-    :param sample_rate: Sampling rate of the audio.
-    :param n_mels: Number of Mel bands to generate.
-    :param frame_length: Length of each frame in seconds.
-    :param frame_stride: Stride between successive frames in seconds.
-    :return: Mel spectrogram (2D NumPy array).
-    """
-    # Calculate the number of samples per frame and stride
-    win_length = int(round(sample_rate * frame_length))
-    hop_length = int(round(sample_rate * frame_stride))
-
-    # Calculate the number of FFT components (n_fft) as the next power of two from win_length
-    n_fft = 2 ** int(np.ceil(np.log2(win_length)))
-
-    # Compute the Mel spectrogram
-    mel_spectrogram = librosa.feature.melspectrogram(y=wave_form, sr=sample_rate, n_fft=n_fft,
-                                                     hop_length=hop_length, win_length=win_length,
-                                                     n_mels=n_mels)
-    return mel_spectrogram
 
 # 경계 시간 계산
-def calculate_boundaries_time(file_path, sample_rate, frame_stride):
+def calculate_boundaries_time(file_path, sample_rate, hop_length):
     """
     Calculate boundary times for audio events from a TSV file and convert them to sample indices.
 
@@ -60,7 +31,6 @@ def calculate_boundaries_time(file_path, sample_rate, frame_stride):
                 boundaries.append((start_time, end_time, label))
 
     # Convert boundary times to sample indices
-    hop_length = int(round(sample_rate * frame_stride))
     boundaries_in_samples = [
         (int(round(start * sample_rate / hop_length)),
          int(round(end * sample_rate / hop_length)), label)
@@ -132,213 +102,134 @@ def adjust_boundaries(boundaries_in_samples, cropped_start):
 
     return adjusted_boundaries
 
-# 지정된 초(n_seconds) 이내로 범위 조정
-def process_mel_and_boundaries(mel, boundaries, sample_rate, frame_stride, n_seconds):
+def process_and_chunk_mel_and_boundaries(mel, boundaries, sample_rate, frame_stride, n_seconds):
     """
-    Process Mel spectrogram and boundaries to fit a specified duration (n_seconds).
+    Process and chunk Mel spectrogram and boundaries to fit multiple segments of specified duration (n_seconds).
 
-    This function adjusts the length of the Mel spectrogram and its associated boundaries.
     If the Mel spectrogram is shorter than the specified duration, it will be repeated
-    until it fits. The boundaries will be recalculated to align with the modified Mel spectrogram.
+    until it fits the duration. If it's longer, the Mel spectrogram and its associated boundaries
+    are divided into chunks, each fitting the specified duration.
 
     :param mel: 2D NumPy array representing the Mel spectrogram.
     :param boundaries: List of tuples representing start, end, and label of each boundary.
     :param sample_rate: Sampling rate of the audio.
     :param frame_stride: Stride between successive frames in seconds.
-    :param n_seconds: Desired duration of the Mel spectrogram in seconds.
-    :return: Tuple of adjusted Mel spectrogram and its boundaries.
+    :param n_seconds: Desired duration of each Mel spectrogram segment in seconds.
+    :return: List of tuples, each containing a chunk of the Mel spectrogram and its boundaries.
     """
 
-    # Calculate hop_length and target_length in samples
+    # Calculate hop_length and target_length in frames
     hop_length = sample_rate * frame_stride
     target_length = int(n_seconds * sample_rate / hop_length)
-
-    # Check if the original Mel spectrogram needs to be repeated
     original_length = mel.shape[1]
-    if original_length >= target_length:
-        # If the spectrogram is already long enough, crop it to the target length
-        mel = mel[:, :target_length]
-        repeat_times = 1
-    else:
+    
+    mel_list = []
+    boundaries_list = []
+
+    if original_length < target_length:
         # If the spectrogram is too short, repeat it until it reaches the target length
         repeat_times = int(np.ceil(target_length / original_length))
-        mel = np.tile(mel, (1, repeat_times))[:, :target_length]
+        mel = np.tile(mel, (1, repeat_times,1))[:, :target_length]
+        original_length = mel.shape[1]  # Update original_length after repeating
+        mel_list.append(mel)
 
-    # Process boundaries for the adjusted Mel spectrogram
-    processed_boundaries = []
-    for start, end, label in boundaries:
-        # Iterate over the repeated segments
+        # Repeat boundaries accordingly
+        repeated_boundaries = []
         for i in range(repeat_times):
-            # Calculate new start and end points for the current segment
-            new_start = start + i * original_length
-            new_end = end + i * original_length
-
-            # Check if the boundary is within the current segment
-            segment_start = i * original_length
-            segment_end = min((i + 1) * original_length, target_length)
-            if new_start >= segment_start and new_end <= segment_end:
-                # Add the adjusted boundary to the list
-                processed_boundaries.append((new_start, new_end, label))
-
-    # Return the adjusted Mel spectrogram and its boundaries
-    return mel, processed_boundaries
-
-# 특정 초 이내로 멜 크롭 (시작 시간(0)으로부터 seconds 까지)
-def crop_mel_by_sec(mel, sample_rate, frame_stride, seconds):
-    """
-    Crop the Mel spectrogram to a specified length in seconds.
-
-    :param mel: Mel spectrogram (2D NumPy array).
-    :param sample_rate: Sampling rate of the original audio.
-    :param frame_stride: Stride between successive frames in seconds.
-    :param seconds: Desired length of the Mel spectrogram in seconds.
-    :return: Cropped Mel spectrogram.
-    """
-    # Calculate hop length to align time axis
-    hop_length = int(round(sample_rate * frame_stride))
-    mel_duration = mel.shape[1] * hop_length / sample_rate
-
-    # Return original Mel if specified seconds exceed its duration
-    if seconds >= mel_duration:
-        return mel
-
-    # Calculate target length in samples and crop
-    target_length = int(seconds * sample_rate / hop_length)
-    return mel[:, :target_length]
-
-# 정사각형 스펙트로그램 그리고 저장하기
-def draw_mel_square_spec(mel, sample_rate, frame_stride):
-    """
-    Draw a square Mel spectrogram and save it to a file.
-
-    :param mel: Mel spectrogram (2D NumPy array).
-    :param sample_rate: Sampling rate of the original audio.
-    :param frame_stride: Stride between successive frames in seconds.
-    :param save_path: Path to save the spectrogram image.
-    :param filename: Filename for saving the image.
-    """
-    # Convert Mel spectrogram to Decibel scale
-    S_dB = librosa.power_to_db(mel, ref=np.max)
-
-    # Calculate hop length for time alignment
-    hop_length = int(round(sample_rate * frame_stride))
+            for start, end, label in boundaries:
+                new_start = start + i * original_length
+                new_end = end + i * original_length
+                
+                # Check if the boundary is within the current segment
+                segment_start = i * original_length
+                segment_end = min((i + 1) * original_length, target_length)
+                if new_start >= segment_start and new_end <= segment_end:
+                    # Add the adjusted boundary to the list
+                    repeated_boundaries.append((new_start, new_end, label))
+        boundaries_list.append(repeated_boundaries)
     
-    return S_dB, hop_length
+    # Calculate the number of chunks needed
+    num_chunks = int(np.floor(original_length / target_length))
 
+    for i in range(num_chunks):
+        # Calculate start and end indices for the current chunk
+        start_idx = i * target_length
+        end_idx = min((i + 1) * target_length, original_length)
+        
+        # Slice the mel spectrogram for the current chunk
+        mel_chunk = mel[:, start_idx:end_idx]
+        mel_list.append(mel_chunk)
 
-# 바운딩박스 레이블 그리고 저장하기
-# def draw_bbox_label_and_save(mel, sample_rate, frame_stride, boundaries_time, save_path, filename, label_1_height=1.0, label_3_height=1.0):
-#     """
-#     Draw bounding boxes on Mel spectrogram based on given boundaries and save it.
+        # Process boundaries for the current chunk
+        chunk_boundaries = []
+        for start, end, label in boundaries:
+            # Adjust boundaries to the current chunk's timeframe
+            chunk_start = max(start - start_idx, 0)
+            chunk_end = min(end - start_idx, end_idx - start_idx)
 
-#     :param mel: Mel spectrogram (2D NumPy array).
-#     :param sample_rate: Sampling rate of the original audio.
-#     :param frame_stride: Stride between successive frames in seconds.
-#     :param boundaries_time: List of tuples with start and end indices and label.
-#     :param save_path: Path to save the image.
-#     :param filename: Filename for saving the image.
-#     :param label_1_height: Height ratio of the bounding box for label 1.
-#     :param label_3_height: Height ratio of the bounding box for label 3.
-#     """
-#     # Set S_dB to a constant minimum value for a black background
-#     S_dB = np.full(mel.shape, -80)  # For example, -80 dB
+            # Add the boundary to the chunk's list if it's within the current chunk
+            if chunk_start < chunk_end:
+                chunk_boundaries.append((chunk_start, chunk_end, label))
+        boundaries_list.append(chunk_boundaries)
 
-#     # Calculate hop length for time alignment
-#     hop_length = int(round(sample_rate * frame_stride))
-
-#     # Create a square figure
-#     fig, ax = plt.subplots(figsize=(3, 3), dpi=95)  # 256x256 pixels at 95 DPI
-
-#     # Display the Mel spectrogram with a gray color map
-#     librosa.display.specshow(S_dB, sr=sample_rate, hop_length=hop_length, cmap='gray')
-#     ax.set_aspect('auto')
-
-#     # Draw bounding boxes for each boundary
-#     for start_idx, end_idx, label in boundaries_time:
-#         color = 'blue' if label == 1 else 'red'
-#         height_ratio = label_1_height if label == 1 else label_3_height
-#         height = int(mel.shape[0] * height_ratio)
-#         rect = patches.Rectangle((start_idx, 0), end_idx - start_idx, height, linewidth=1, edgecolor=color, facecolor=color)
-#         ax.add_patch(rect)
-
-#     # Save and display the bounding box image
-#     plt.tight_layout()
-#     full_save_path = os.path.join(save_path, filename + '_label')
-#     plt.savefig(full_save_path, bbox_inches='tight', pad_inches=0)
-#     plt.show()
-#     print(f"{filename} bounding box segments label image saved\n")
-
-# 강도를 지정하여 이미지 그리기
-def draw_filtered_mel_square_spec_with_boundaries(mel, boundaries_in_samples, filter_limit, sample_rate, frame_stride, save_path, filename):
-    """
-    Draw a square Mel spectrogram within specific boundaries of a label.
-
-    :param mel: Mel spectrogram (2D NumPy array).
-    :param boundaries_in_samples: List of tuples with start and end indices and labels.
-    :param sample_rate: Sampling rate of the original audio.
-    :param frame_stride: Stride between successive frames in seconds.
-    :param save_path: Directory path where the image will be saved.
-    :param filename: Name of the file to save the image.
-    """
-    # Convert Mel spectrogram to Decibel scale
-    S_dB = librosa.power_to_db(mel, ref=np.max)
-
-    min_val = np.min(S_dB)
-    S_dB = np.where(S_dB > filter_limit, S_dB, min_val)
-
-    # Calculate hop length for time alignment
-    hop_length = int(round(sample_rate * frame_stride))
-
-    # Mask regions outside the label boundaries
-    for i in range(S_dB.shape[1]):
-        if not any(start <= i < end for start, end, boundary_label in boundaries_in_samples if boundary_label):
-            S_dB[:, i] = min_val
-
-    # Create a square figure
-    fig, ax = plt.subplots(figsize=(3, 3), dpi=95)
-
-    # Display the Mel spectrogram
-    librosa.display.specshow(S_dB, sr=sample_rate, hop_length=hop_length)
-    ax.set_aspect('auto')
-    plt.tight_layout()
-    plt.show()
+    return mel_list, boundaries_list
 
 # 심음별 시작/종료 레이블 정보를 바탕으로 강도를 지정하여 세그먼트 및 이미지 저장
-def draw_mel_square_spec_with_boundaries_to_label_and_filter(mel, boundaries_in_samples, filter_limit, sample_rate, frame_stride):
+def get_segmentation_labels(mel_list, boundary_list, filter_value, hop_length):
     """
     Draw a square Mel spectrogram within specific boundaries of a label.
 
     :param mel: Mel spectrogram (2D NumPy array).
-    :param boundaries_in_samples: List of tuples with start and end indices and labels.
+    :param boundaries: List of tuples with start and end indices and labels.
     :param sample_rate: Sampling rate of the original audio.
     :param frame_stride: Stride between successive frames in seconds.
     :param save_path: Directory path where the image will be saved.
     :param filename: Name of the file to save the image.
     """
-    # Convert Mel spectrogram to Decibel scale
-    S_dB = librosa.power_to_db(mel, ref=np.max)
 
-    min_val = -80
-    max_val = np.max(S_dB)
-    mid_val = (min_val + max_val) / 2
-    S_dB = np.where(S_dB > filter_limit, S_dB, min_val)
+    label_list = []
+    
+    for mel, boundaries in zip(mel_list, boundary_list):
+        background = 0
+        S1 = 127
+        S2 = 255
+        mel = np.where(mel > filter_value, mel, background) # filtering
+        mel[:, :, 1] = 0
+        mel = np.squeeze(mel[:, :, 0:1])
+        #mel = np.dot(mel[..., :3], [0.299, 0.587, 0.114]) # RGB to grayscale
 
-    # Calculate hop length for time alignment
-    hop_length = int(round(sample_rate * frame_stride))
+        # Process each column based on label boundaries
+        for timepoint in range(mel.shape[1]):
+            label_found = False
+            for start, end, boundary_label in boundaries:
+                if start <= timepoint < end:
+                    label_found = True
+                    if boundary_label == 1: # S1
+                        mel[:, timepoint] = np.where(mel[:, timepoint] > background, S1, background).astype(int)
+                    elif boundary_label == 3: # S2
+                        mel[:, timepoint] = np.where(mel[:, timepoint] > background, S2, background).astype(int)
+                    break  # Break the loop once the matching label is found and applied
 
-    # Process each column based on label boundaries
-    for i in range(S_dB.shape[1]):
-        label_found = False
-        for start, end, boundary_label in boundaries_in_samples:
-            if start <= i < end:
-                label_found = True
-                if boundary_label == 1:
-                    S_dB[:, i] = np.where(S_dB[:, i] > min_val, max_val, S_dB[:, i])
-                elif boundary_label == 3:
-                    S_dB[:, i] = np.where(S_dB[:, i] > min_val, mid_val, S_dB[:, i])
-                break  # Break the loop once the matching label is found and applied
+            if not label_found:
+                mel[:, timepoint] = background
+        
+        label_list.append(mel)
 
-        if not label_found:
-            S_dB[:, i] = min_val
+    return label_list
 
-    return S_dB
+# segmentation mask에서 빈 영역을 채우기
+def fill_blank_regions(mel_list):
+    filled_mel_list = []
+
+    for mel in mel_list:
+        height, width = mel.shape
+        # 각 열을 순회하며 특정 색상의 픽셀 아래 부분을 같은 색으로 채우기
+        for x in range(width):
+            for y in range(height):
+                pixel_color = mel[y, x]
+                if pixel_color == 255 or pixel_color == 127:  # 흰색(255) 또는 회색(127) 픽셀 발견
+                    mel[y:, x] = pixel_color  # 해당 위치부터 아래까지 같은 색으로 채움
+                    break  # 해당 열에서 색상을 찾으면 나머지 행은 무시
+        filled_mel_list.append(mel)
+
+    return filled_mel_list
