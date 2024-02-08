@@ -1,10 +1,12 @@
 #!/usr/bin/python3
-
 import keras
+from tensorflow.keras.metrics import SparseCategoricalAccuracy
 from keras.utils import to_categorical
 from tensorflow.keras.utils import Progbar
 # load custom modules
-from dataloader import *
+from loader import *
+from utils import *
+from nets.unet import unet_model
 
 # from models import model
 
@@ -19,58 +21,40 @@ from dataloader import *
 #     return acc
 
 class Trainer:
-    def __init__(self, model, epochs, batch, loss_fn, optimizer):
+    def __init__(self, model, epochs, batch, loss_fn, optimizer, valid_dataset=None):
         self.model = model
         self.epochs = epochs
         self.batch = batch
         self.loss_fn = loss_fn
         self.optimizer = optimizer
-        
-    def train(self, train_dataset, train_metric):
+        self.valid_dataset = valid_dataset
+
+    def train(self, train_dataset, train_metric, valid_metric=None):
         for epoch in range(self.epochs):
             print("\nStart of epoch %d" % (epoch,))
-            # Iterate over the batches of the dataset.
-            for step, (x_batch_train, y_batch_train) in enumerate(train_dataset): # batch size만큼 데이터를 가져옴
-                with tf.GradientTape() as tape: # 자동 미분을 위한 테이프
-                    logits = self.model(x_batch_train, training=True) # 모델의 예측값
-                    loss_value = self.loss_fn(y_batch_train, logits) # loss 계산
-                grads = tape.gradient(loss_value, self.model.trainable_weights) # loss에 대한 모델의 trainable한 변수의 gradient 계산
-                self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights)) # 모델의 변수 업데이트
-                # Update training metric.
-                train_metric.update_state(y_batch_train, logits) # y_batch_train과 logits으로 train_metric 업데이트
-                # Log every 10 batches.
+            for step, (x_batch_train, y_batch_train) in enumerate(train_dataset):
+                with tf.GradientTape() as tape:
+                    logits = self.model(x_batch_train, training=True)
+                    loss_value = self.loss_fn(y_batch_train, logits)
+                grads = tape.gradient(loss_value, self.model.trainable_weights)
+                self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
+                train_metric.update_state(y_batch_train, logits)
                 if step % 10 == 0:
-                    print(
-                        "Training loss (for one batch) at step %d: %.4f"
-                        % (step, float(loss_value))
-                    )
+                    print("Training loss (for one batch) at step %d: %.4f" % (step, float(loss_value)))
                     print("Seen so far: %d samples" % ((step + 1) * self.batch))
                     print(train_metric.result().numpy())
-            # Display metrics at the end of each epoch.
+
             train_acc = train_metric.result()
             print("Training metric over epoch: %.4f" % (float(train_acc),))
-        
+            train_metric.reset_states()
 
-        # # Train the model
-        # model.fit(self.train_images, self.train_labels, epochs=5, batch_size=128)
+            if self.valid_dataset is not None and valid_metric is not None:
+                self.evaluate(self.valid_dataset, valid_metric)
 
-        # # Evaluate the model
-        # test_loss, test_acc = model.evaluate(self.test_images, self.test_labels)
-        # print('test_acc:', test_acc)
-
-if __name__ == "__main__":
-    epoch = 1
-    batch = 5
-    model = YogaPose(num_classes=5)
-    dataset = load_data(data_path=data_path, batch_size=batch)
-    loss_function = tf.keras.losses.CategoricalCrossentropy()
-    optimizer = tf.keras.optimizers.Adam()
-    train_acc_metric = tf.keras.metrics.CategoricalAccuracy()
-    
-    trainer = Trainer(model=model,
-                  epochs=epoch,
-                  batch=batch,
-                  loss_fn=loss_function,
-                  optimizer=optimizer)
-    trainer.train(train_dataset=dataset,
-                train_metric=train_acc_metric)
+    def evaluate(self, valid_dataset, valid_metric):
+        for x_batch_val, y_batch_val in valid_dataset:
+            val_logits = self.model(x_batch_val, training=False)
+            valid_metric.update_state(y_batch_val, val_logits)
+        val_acc = valid_metric.result()
+        valid_metric.reset_states()
+        print("Validation metric: %.4f" % (float(val_acc),))
