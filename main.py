@@ -27,15 +27,14 @@ if __name__ == "__main__":
     # preprocessing hyperparameter
     parser.add_argument('--image_size', default=256, type=float, help='image size')
     parser.add_argument('--crop_time', default=2500, type=float, help='image crop duration')
-    parser.prep_version('--prep_ver', default='v1', type=float, help='preprocessing version')
-    
+    parser.add_argument('--prep_ver', default='v1', type=str, help='preprocessing version')
     # model hyperparameter
-    parser.add_argument('--batch_size', default=16, type=int, help='batch size')
-    parser.add_argument('--epoch', default=5, type=int, help='training epoch')
+    parser.add_argument('--batch_size', default=2, type=int, help='batch size')
+    parser.add_argument('--epoch', default=2, type=int, help='training epoch')
     parser.add_argument('--train', default='train', type=str, help='train and eval')
-    parser.add_argument("--train_path", type=str, default='./data/256px_2500ms/train')
-    parser.add_argument("--val_path", type=str,	default='./data/256px_2500ms/val')
-    parser.add_argument("--test_path", type=str, default='./data/256px_2500ms/test')
+    parser.add_argument("--train_path", type=str, default='./data/v1/train')
+    parser.add_argument("--val_path", type=str,	default='./data/v1/val')
+    parser.add_argument("--test_path", type=str, default='./data/v1/test')
     parser.add_argument("--checkpoint_path",type=str, default='./checkpoints')
     args = parser.parse_args()
     print(args)
@@ -77,7 +76,7 @@ if __name__ == "__main__":
     val_dir = args.val_path
     test_dir = args.test_path
 
-    keep_colors = [0, 98, 244]
+    keep_colors = [0, 127, 255]
     filter_and_save_images(train_dir, keep_colors)
     filter_and_save_images(val_dir, keep_colors)
     filter_and_save_images(test_dir, keep_colors)
@@ -122,9 +121,9 @@ if __name__ == "__main__":
     [
         keras_cv.layers.RandomFlip(),
         keras_cv.layers.RandomBrightness(factor=data_config.BRIGHTNESS_FACTOR,
-                                         value_range=(0, 255)),
+        value_range=(0, 255)),
         keras_cv.layers.RandomContrast(factor=data_config.CONTRAST_FACTOR,
-                                       value_range=(0, 255)),
+        value_range=(0, 255)),
     ])
 
     train_dataset = (
@@ -180,8 +179,8 @@ if __name__ == "__main__":
 
     # 모델 컴파일
     model.compile(optimizer="adam",
-                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-                  metrics=["accuracy"])
+                loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
+                metrics=["accuracy"])
     
     # 훈련 및 검증 메트릭 준비
     train_metric = tf.keras.metrics.SparseCategoricalAccuracy()
@@ -189,12 +188,12 @@ if __name__ == "__main__":
 
     # Trainer 인스턴스 생성 및 학습 실행
     trainer = Trainer(model=model, epochs=args.epoch, batch=args.batch_size,
-                      loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-                      optimizer=tf.keras.optimizers.Adam(),
-                      valid_dataset=valid_dataset)
+                    loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
+                    optimizer=tf.keras.optimizers.Adam(),
+                    valid_dataset=valid_dataset)
     trainer.train(train_dataset=train_dataset,
-                  train_metric=train_metric,
-                  valid_metric=valid_metric)
+                train_metric=train_metric,
+                valid_metric=valid_metric)
 
     # 추론 함수 실행
     saved_image_paths = inference(model, test_dataset_random_samples, 5)
