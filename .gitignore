@@ -15,4 +15,4 @@ data/*
 models/notebooks
 notebooks/
 scripts/
-checkpoints_resnet50_v2/
+models/deeplabv3_plus_resnet50_v2.h5

@@ -166,7 +166,7 @@ def read_image_mask(image_path, mask=False, size=data_config.IMAGE_SIZE):
 
         # 원본 마스크 이미지에서 라벨 별로 픽셀을 분리
         label_0_mask = tf.cast(tf.equal(image, 0), tf.uint8)
-        label_1_mask = tf.cast(tf.equal(image, 102), tf.uint8)
+        label_1_mask = tf.cast(tf.equal(image, 127), tf.uint8)
         label_2_mask = tf.cast(tf.equal(image, 255), tf.uint8)
 
         # 여러 라벨을 하나의 마스크로 결합
