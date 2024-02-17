@@ -123,62 +123,29 @@ def check_dataset_exists(prepdir):
             return True
     return False
 
-def filter_and_save_images(dir_path, keep_colors):
-    """
-    특정 색상을 유지하며 레이블 이미지를 필터링하고 같은 폴더에 다른 이름으로 저장하는 함수.
-
-    Parameters:
-    - dir_path: 이미지 파일이 있는 디렉토리 경로. 이 경로는 입력과 출력 모두에 사용됩니다.
-    - keep_colors: 유지할 색상 값의 리스트.
-    """
-    
-    # 입력 디렉토리에서 _label.png로 끝나는 이미지 파일 목록을 가져옴
-    img_files = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f)) and f.endswith('_label.png')]
-    print(img_files[0])
-    # 이미지 파일들을 순회하며 처리
-    for file in img_files:
-        # 이미지 불러오기
-        img_path = os.path.join(dir_path, file)
-        img = load_img(img_path, color_mode='grayscale')
-        img_array = img_to_array(img)
-        img_array = img_array.astype("uint8")
-
-        # 유지할 색상이 아닌 값들을 0으로 설정
-        mask = np.isin(img_array, keep_colors)
-        filtered_img = np.where(mask, img_array, 0)
-
-        # 채널 차원을 유지하도록 조정
-        if filtered_img.ndim == 2:
-            filtered_img = np.expand_dims(filtered_img, axis=-1)
-
-        # 처리된 이미지를 다른 이름으로 저장
-        filtered_img_path = os.path.splitext(img_path)[0] + '_filtered.png'
-        save_img(filtered_img_path, filtered_img)
-
-def read_image_mask(image_path, mask=False, size=data_config.IMAGE_SIZE):
+def read_image_mask(image_path, mask=False, size=(256, 256)):
     image = tf.io.read_file(image_path)
-
     if mask:
-        image = tf.io.read_file(image_path)
-        image = tf.io.decode_image(image, channels=1)
+        image = tf.io.decode_image(image, channels=1, expand_animations=False)
         image.set_shape([None, None, 1])
-        image = tf.image.resize(images=image, size=size, method="bicubic")
-
-        # 원본 마스크 이미지에서 라벨 별로 픽셀을 분리
+        image = tf.image.resize(images=image, size=size, method="nearest")
+        
+        # 마스크 레이블 처리
         label_0_mask = tf.cast(tf.equal(image, 0), tf.uint8)
         label_1_mask = tf.cast(tf.equal(image, 127), tf.uint8)
         label_2_mask = tf.cast(tf.equal(image, 255), tf.uint8)
-
-        # 여러 라벨을 하나의 마스크로 결합
         combined_mask = label_0_mask * 0 + label_1_mask * 1 + label_2_mask * 2
+
+        # 마스크 정규화 (옵션)
+        combined_mask = tf.cast(combined_mask, tf.float32) / 2.0  # 클래스가 0, 1, 2이므로 2로 나눕니다.
         return combined_mask
 
     else:
-        image = tf.io.decode_image(image, channels=3)
+        image = tf.io.decode_image(image, channels=3, expand_animations=False)
         image.set_shape([None, None, 3])
-        image = tf.image.resize(images=image, size=size, method="bicubic")
-        image = tf.cast(tf.clip_by_value(image, 0., 255.), tf.float32)
-
+        image = tf.image.resize(images=image, size=size, method="nearest")
+        image = tf.cast(image, tf.float32) / 255.0  # 이미지 정규화
+        
     return image
 
 def load_data(image_list, mask_list):
@@ -236,38 +203,6 @@ def display_image_and_mask(data_list, title_list, figsize, color_mask=False, col
             axis.imshow(data_list[idx])
         axis.axis('off')
     plt.show()
-
-def get_callbacks(
-    train_config,
-    monitor="val_mean_iou",
-    mode="max",
-    save_weights_only=True,
-    save_best_only=True,
-):
-
-    # Initialize tensorboard callback for logging.
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=train_config.LOGS_DIR,
-        histogram_freq=20,
-        write_graph=False,
-        update_freq="epoch",
-    )
-
-
-    # Update file path if saving best model weights.
-    if save_weights_only:
-        checkpoint_filepath = train_config.CKPT_DIR
-
-    model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
-        filepath=checkpoint_filepath,
-        save_weights_only=save_weights_only,
-        monitor=monitor,
-        mode=mode,
-        save_best_only=save_best_only,
-        verbose=1,
-    )
-
-    return [tensorboard_callback, model_checkpoint_callback]
 
 def mean_iou(y_true, y_pred):
     # Get total number of classes from model output.
