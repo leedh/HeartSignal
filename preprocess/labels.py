@@ -178,13 +178,6 @@ def process_and_chunk_mel_and_boundaries(mel, boundaries, sample_rate, frame_str
 def get_segmentation_labels(mel_list, boundary_list, filter_value, hop_length):
     """
     Draw a square Mel spectrogram within specific boundaries of a label.
-
-    :param mel: Mel spectrogram (2D NumPy array).
-    :param boundaries: List of tuples with start and end indices and labels.
-    :param sample_rate: Sampling rate of the original audio.
-    :param frame_stride: Stride between successive frames in seconds.
-    :param save_path: Directory path where the image will be saved.
-    :param filename: Name of the file to save the image.
     """
 
     label_list = []
