@@ -15,6 +15,7 @@ from utils import *
 from preprocess.preprocessing import *
 from preprocess.labels import *
 from preprocess.blank_region_clipping import *
+from PIL import Image
 
 class DataLoader:
     def __init__(self, data_dir, resample=8000, lowpass_cutoff_freq=500, n_mels=96):
@@ -132,3 +133,4 @@ class ImageLoader:
         dataset = dataset.batch(self.batch_size).shuffle(buffer_size=100).prefetch(tf.data.experimental.AUTOTUNE)
         
         return dataset
+
