@@ -15,4 +15,5 @@ data/*
 models/notebooks
 notebooks/
 scripts/
-models/deeplabv3_plus_resnet50_v2.h5
+models/
+etc/

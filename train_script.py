@@ -1,15 +1,18 @@
-from config import data_config, train_config, path_config, id2color, augment_fn, get_callbacks
+from config import *
 import matplotlib.pyplot as plt
 from keras.preprocessing.image import load_img, img_to_array, save_img
 import tensorflow as tf
 from nets.unet import unet_model
+from nets.unet_pp import unet_pp_model
+from nets.segnet import segnet
 from train import Trainer
 from utils import *
-from check_images import save_batch_images_with_masks
+from check_images import analyze_colors_in_dataset
 import random
 import numpy as np
 import cv2
 import keras_cv
+from eval import plot_training_history
 
 if __name__ == "__main__":
 
@@ -43,8 +46,6 @@ if __name__ == "__main__":
     print(valid_ds)
     print(test_ds)
 
-    save_batch_images_with_masks(train_ds, "/hs/HeartSignal/eda/check_train_ds", batch_size=3)
-
     train_dataset = (
         train_ds.shuffle(data_config.BATCH_SIZE)
         .map(augment_fn, num_parallel_calls=tf.data.AUTOTUNE)
@@ -67,47 +68,36 @@ if __name__ == "__main__":
         .prefetch(buffer_size=tf.data.AUTOTUNE)
         )
 
-    backbone = keras_cv.models.ResNet50V2Backbone.from_preset(preset=train_config.MODEL,input_shape=data_config.IMAGE_SIZE+(3,),load_weights = True)
-    model = keras_cv.models.segmentation.DeepLabV3Plus(num_classes=data_config.NUM_CLASSES, backbone=backbone)
+    # backbone = keras_cv.models.ResNet50V2Backbone.from_preset(preset=train_config.MODEL,input_shape=data_config.IMAGE_SIZE+(3,),load_weights=True)
+    # backbone = keras_cv.models.EfficientNetV2Backbone.from_preset(preset = efficient_train_config.MODEL,input_shape=data_config.IMAGE_SIZE+(3,),load_weights=True) # EfficientNet Backbone
+    # model = keras_cv.models.segmentation.DeepLabV3Plus(num_classes=data_config.NUM_CLASSES, backbone=backbone)
+    # model_efficient = keras_cv.models.segmentation.DeepLabV3Plus(num_classes=data_config.NUM_CLASSES, backbone=backbone)
+    # model_unet = unet_model(img_size=(256,256), num_classes=data_config.NUM_CLASSES)
+    # model_unet_pp = unet_pp_model(img_size=(256,256), num_classes=data_config.NUM_CLASSES)
+    model_segnet = segnet(img_size=(256,256), num_classes=data_config.NUM_CLASSES)
 
-    # Get callbacks.
+    # Get callbacks
     callbacks = get_callbacks(train_config)
     # Define Loss.
     loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
     # Compile model.
-    model.compile(
+    model_segnet.compile(
         optimizer=tf.keras.optimizers.Adam(train_config.LEARNING_RATE),
         loss=loss_fn,
         metrics=["accuracy", mean_iou],
     )
 
-    # model.load_weights('/content/drive/MyDrive/aiffelthon_heartsignal/HeartSignal/models/deeplabv3_plus_resnet50_v2.h5')
+    # model_segnet.load_weights('')
 
-    history = model.fit(
+    analyze_colors_in_dataset(train_dataset, n_images=5)
+
+    history = model_segnet.fit(
     train_dataset,
     epochs=train_config.EPOCHS,
     validation_data=valid_dataset,
     callbacks=callbacks
     )
 
-    # img_size = (256, 256)
-    # num_classes = 3
-    # model = unet_model(img_size, num_classes)
+    plot_training_history(history, range(1, train_config.EPOCHS + 1), "/hs/HeartSignal/models/history")
 
-    # # 모델 컴파일
-    # model.compile(optimizer="adam",
-    #             loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-    #             metrics=["accuracy"])
-    
-    # # 훈련 및 검증 메트릭 준비
-    # train_metric = tf.keras.metrics.SparseCategoricalAccuracy()
-    # valid_metric = tf.keras.metrics.SparseCategoricalAccuracy()
-
-    # # Trainer 인스턴스 생성 및 학습 실행
-    # trainer = Trainer(model=model, epochs=args.epoch, batch=args.batch_size,
-    #                 loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-    #                 optimizer=tf.keras.optimizers.Adam(),
-    #                 valid_dataset=valid_dataset)
-    # trainer.train(train_dataset=train_dataset,
-    #             train_metric=train_metric,
-    #             valid_metric=valid_metric)
+    saved_paths = inference(model_segnet, test_dataset_random_samples, 10)

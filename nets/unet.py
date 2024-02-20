@@ -4,7 +4,7 @@ from tensorflow.keras.layers.experimental.preprocessing import Rescaling
 
 def unet_model(img_size, num_classes):
     inputs = Input(shape=img_size + (3,))
-    rescaling = Rescaling(1./255)(inputs)
+    rescaling = inputs
     #Contracting Path
     conv1 = Conv2D(64, 3, activation='relu', padding='same',kernel_initializer='he_normal')(rescaling)
     conv1 = Conv2D(64, 3, activation='relu', padding='same',kernel_initializer='he_normal')(conv1)

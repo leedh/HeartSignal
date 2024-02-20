@@ -7,38 +7,36 @@ import keras_cv
 
 @dataclass(frozen=True)
 class PathConfig:
-    BASE_PATH_GT: str = "/hs/HeartSignal/data/v1/"
+    BASE_PATH_GT: str = "/hs/HeartSignal/data/v1_img/"
     BASE_PATH_LABEL: str = "/hs/HeartSignal/data/filtered/"
     DIRECTORIES: list = field(default_factory=lambda: ["train", "val", "test"])
 
 @dataclass(frozen=True)
 class DatasetConfig:
     IMAGE_SIZE:        tuple = (256, 256)
-    BATCH_SIZE:          int = 1
+    BATCH_SIZE:          int = 32
     NUM_CLASSES:         int = 3
-    BRIGHTNESS_FACTOR: float = 0.2
-    CONTRAST_FACTOR:   float = 0.2
+    BRIGHTNESS_FACTOR: float = 0.3
+    CONTRAST_FACTOR:   float = 0.3
 
 @dataclass(frozen=True)
 class TrainingConfig:
-    MODEL:           str = "resnet50_v2_imagenet"
-    EPOCHS:          int = 2
-    LEARNING_RATE: float = 1e-4
+    MODEL:           str = "Segnet_aug"
+    EPOCHS:          int = 25
+    LEARNING_RATE: float = 1e-3
     CKPT_DIR:        str = os.path.join("/hs/HeartSignal/models/checkpoints_"+"_".join(MODEL.split("_")[:2]),
-                                        "deeplabv3_plus_"+"_".join(MODEL.split("_")[:2])+".h5")
+                                        "model_"+"_".join(MODEL.split("_")[:2])+".h5")
     LOGS_DIR:        str = "logs_"+"_".join(MODEL.split("_")[:2])
 
 data_config = DatasetConfig()
-train_config = TrainingConfig()
 path_config = PathConfig()
+train_config = TrainingConfig()
 
 augment_fn = tf.keras.Sequential(
     [
         keras_cv.layers.RandomFlip(),
-        keras_cv.layers.RandomBrightness(factor=data_config.BRIGHTNESS_FACTOR,
-        value_range=(0, 255)),
-        keras_cv.layers.RandomContrast(factor=data_config.CONTRAST_FACTOR,
-        value_range=(0, 255)),
+        keras_cv.layers.RandomBrightness(factor=data_config.BRIGHTNESS_FACTOR,value_range=(0, 1)),
+        keras_cv.layers.RandomContrast(factor=data_config.CONTRAST_FACTOR,value_range=(0, 1))
     ])
 
 id2color = {

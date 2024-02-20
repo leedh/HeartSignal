@@ -44,7 +44,7 @@ def filter_and_save_images(input_dir, output_dir, keep_colors):
 
 if __name__ == "__main__":
     # 로컬 디렉토리 경로 설정
-    base_path = "/hs/HeartSignal/data/v1"
+    base_path = "/hs/HeartSignal/data/v1_img"
     output_base_path = "/hs/HeartSignal/data/filtered"  # 출력 디렉토리 기본 경로 설정
     directories = ["train", "val", "test"]
     keep_colors = [0, 127, 255]  # 유지할 색상 값

@@ -8,7 +8,8 @@ from PIL import Image
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
-from utils import unpackage_inputs
+import cv2
+from utils import unpackage_inputs, image_overlay
 import random
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 
@@ -78,37 +79,57 @@ def analyze_label_colors(target_dir, num_samples):
     for color, count in sorted_colors:
         print(f"Color: {color}, Count: {count}")
 
-def save_batch_images_with_masks(dataset, save_dir="/hs/HeartSignal/eda/check_train_ds", batch_size=3):
+def analyze_colors_in_dataset(data, n_images):
     """
-    TensorFlow 데이터셋에서 배치를 추출하여 이미지와 마스크를 오버레이한 뒤 파일로 저장합니다.
-
+    데이터셋에서 랜덤하게 n_images만큼의 이미지와 마스크를 분석하여 색상 분포를 출력합니다.
+    
     Parameters:
-    - dataset: TensorFlow 데이터셋 객체. 이미지와 마스크를 포함해야 합니다.
-    - save_dir: 저장할 디렉토리 경로.
-    - batch_size: 저장할 배치 크기.
+    - data: TensorFlow 데이터셋 객체. 이미지와 마스크를 포함해야 합니다.
+    - n_images: 분석할 이미지의 수.
     """
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
 
-    # 데이터셋에서 배치를 추출
-    plot_dataset = dataset.map(unpackage_inputs).batch(batch_size)
-    image_batch, mask_batch = next(iter(plot_dataset.take(1)))
+    estimated_size = data.cardinality().numpy()
+    if estimated_size == tf.data.experimental.AUTOTUNE:
+        raise ValueError("Data size is unknown. Please ensure the dataset size is calculable.")
 
-    for i, (image, mask) in enumerate(zip(image_batch, mask_batch)):
-        # 마스크의 채널 차원 제거 및 오버레이 준비
-        mask = tf.squeeze(mask, axis=-1).numpy()
+    overall_image_color_counts = {}
+    overall_mask_color_counts = {}
 
-        # 오버레이된 이미지 준비
-        overlayed_image = np.copy(image.numpy().astype(np.uint8))
-        overlayed_image[mask == 1] = [255, 0, 0]  # 예시: 레이블 1에 대해 빨간색 오버레이 적용
+    selected_indices = random.sample(range(estimated_size), n_images)
 
-        # 오버레이된 이미지 저장
-        plt.imsave(os.path.join(save_dir, f"overlayed_image_{i}.png"), overlayed_image)   
+    for index in selected_indices:
+        image, mask = next(iter(data.skip(index).take(1)))
+
+        # 이미지 색상 분포 분석
+        image = image.numpy()
+        image_colors = image.reshape(-1, image.shape[-1])
+        unique_image_colors, counts_image = np.unique(image_colors, axis=0, return_counts=True)
+        for color, count in zip(map(tuple, unique_image_colors), counts_image):
+            overall_image_color_counts[color] = overall_image_color_counts.get(color, 0) + count
+
+        # 마스크 색상 분포 분석
+        mask = mask.numpy().squeeze()
+        unique_mask_colors, counts_mask = np.unique(mask, return_counts=True)
+        for color, count in zip(unique_mask_colors, counts_mask):
+            overall_mask_color_counts[color] = overall_mask_color_counts.get(color, 0) + count
+
+    # 가장 많이 나타난 색상값을 정렬하여 추출
+    sorted_image_colors = sorted(overall_image_color_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    sorted_mask_colors = sorted(overall_mask_color_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    # 결과 출력
+    print("Image color distribution in the dataset:")
+    for color, count in sorted_image_colors:
+        print(f"Color: {color}, Count: {count}")
+
+    print("\nMask color distribution in the dataset:")
+    for color, count in sorted_mask_colors:
+        print(f"Color: {color}, Count: {count}")
 
 if __name__ == "__main__":
     # 상황에 따라 로컬 디렉토리 경로 설정
     base_path = "/hs/HeartSignal/data/filtered"
-    # base_path = "/hs/HeartSignal/data/v1"
+    # base_path = "/hs/HeartSignal/data/v1_img"
     directories = ["train", "val", "test"]
 
     for dir in directories:

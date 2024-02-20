@@ -135,16 +135,13 @@ def read_image_mask(image_path, mask=False, size=(256, 256)):
         label_1_mask = tf.cast(tf.equal(image, 127), tf.uint8)
         label_2_mask = tf.cast(tf.equal(image, 255), tf.uint8)
         combined_mask = label_0_mask * 0 + label_1_mask * 1 + label_2_mask * 2
-
-        # 마스크 정규화 (옵션)
-        combined_mask = tf.cast(combined_mask, tf.float32) / 2.0  # 클래스가 0, 1, 2이므로 2로 나눕니다.
         return combined_mask
 
     else:
         image = tf.io.decode_image(image, channels=3, expand_animations=False)
         image.set_shape([None, None, 3])
         image = tf.image.resize(images=image, size=size, method="nearest")
-        image = tf.cast(image, tf.float32) / 255.0  # 이미지 정규화
+        image = tf.cast(image, tf.float32) / 255.0
         
     return image
 
@@ -225,8 +222,8 @@ def mean_iou(y_true, y_pred):
 
 def save_mask_images(mask, pred, count):
     # GT와 Pred를 위한 디렉토리 생성
-    gt_dir = '/hs/HeartSignal/data/256px_2500ms/gt'
-    pred_dir = '/hs/HeartSignal/data/256px_2500ms/pred'
+    gt_dir = '/hs/HeartSignal/models/save_dir/gt'
+    pred_dir = '/hs/HeartSignal/models/save_dir/pred'
     os.makedirs(gt_dir, exist_ok=True)
     os.makedirs(pred_dir, exist_ok=True)
     # GT Mask 저장
