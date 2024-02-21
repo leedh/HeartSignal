@@ -56,7 +56,7 @@ def figure_mel_spec(mel, type, save_path):
     colormap = 'magma' if type == 'img' else 'gray'
     # Figure와 Axes 객체를 명시적으로 생성
     fig, ax = plt.subplots(dpi=95)  # DPI 설정을 여기에 포함
-    ax.imshow(mel, cmap=colormap)
+    ax.imshow(mel, aspect='auto', cmap=colormap)
     ax.axis('off')  # 축 끄기
 
     # tight_layout 호출로 레이아웃 최적화

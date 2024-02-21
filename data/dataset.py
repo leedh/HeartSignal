@@ -86,8 +86,8 @@ def dataset_split(basedir, preprocess_name, data):
             del audio_path, mel_spectrogram, label
             gc.collect() # garbege collection
     # Save data
-    #save_data(train_group_idx, 'train')
-    #save_data(val_group_idx, 'val')
+    save_data(train_group_idx, 'train')
+    save_data(val_group_idx, 'val')
     save_data(test_group_idx, 'test')
 
     print("Data successfully saved.")
