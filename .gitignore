@@ -7,7 +7,6 @@
 __pycache__
 
 # Directories
-assets/
 previous/
 data/*
 !data/dataset.py
@@ -15,5 +14,4 @@ data/*
 models/notebooks
 notebooks/
 scripts/
-models/
 etc/
